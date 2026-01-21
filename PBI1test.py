@@ -1,163 +1,139 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Download, Calendar, Filter } from 'lucide-react';
+import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+import io
 
-const PBI1_TestScreen = () => {
-  const [activeTab, setActiveTab] = useState('status'); // 'status' or 'activity'
-  const [keyword, setKeyword] = useState('');
-  const [statusFilter, setStatusFilter] = useState([]);
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [error, setError] = useState('');
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="Caleb Admin - Goals Management", layout="wide")
 
-  // 1. Mandatory Rule: Default range to "Start from today backward 1 month"
-  useEffect(() => {
-    const today = new Date();
-    const lastMonth = new Date();
-    lastMonth.setMonth(today.getMonth() - 1);
+# --- 2. MOCK DATA GENERATOR ---
+# Created with the exact column names specified in PBI#1 EARS section
+@st.cache_data
+def load_data():
+    # Goals Status Fields
+    status_cols = [
+        "Child ID", "Nickname", "Access", "Parent ID", "Parent Username", 
+        "Goal Name", "Current Amount Allocated", "Target Amount", 
+        "Created Date", "Target End Date", "Actual End Date", "Progress Status"
+    ]
     
-    setDateRange({
-      start: lastMonth.toISOString().split('T')[0],
-      end: today.toISOString().split('T')[0]
-    });
-  }, []);
+    # Goals Activity Fields
+    activity_cols = [
+        "Transaction Date & Time", "Child ID", "Nickname", "Child Access", 
+        "Parent ID", "Parent Username", "Goal Name", "Amount Allocated", 
+        "Amount Post Allocation"
+    ]
 
-  const statuses = ['Completed', 'Active', 'Pending Approval', 'Cancelled', 'Rejected', 'Expired'];
+    # Mocking rows to match column definitions
+    status_mock = [
+        ["C-001", "Alex", "Full", "P-100", "user_parent_1", "New Bike", 50.0, 200.0, "15-01-2026", "01-02-2026", None, "Active"],
+        ["C-002", "Bella", "Limited", "P-101", "user_parent_2", "Lego Set", 100.0, 100.0, "01-01-2026", "20-01-2026", "20-01-2026", "Completed"],
+        ["C-003", "Charlie", "Full", "P-100", "user_parent_1", "Savings", 25.0, 1000.0, "20-12-2025", "01-01-2027", None, "Pending Approval"]
+    ]
+    
+    activity_mock = [
+        ["20-01-2026 14:30:00", "C-001", "Alex", "Full", "P-100", "user_parent_1", "New Bike", 10.0, 50.0],
+        ["19-01-2026 09:15:00", "C-002", "Bella", "Limited", "P-101", "user_parent_2", "Lego Set", 50.0, 100.0],
+        ["21-01-2026 10:00:00", "C-001", "Alex", "Full", "P-100", "user_parent_1", "New Bike", 5.0, 55.0]
+    ]
 
-  // 2. Export Validation Logic
-  const handleExport = (type) => {
-    if (!dateRange.start || !dateRange.end) {
-      setError("Error: Time Range filter is mandatory for exporting data.");
-      return;
-    }
-    setError("");
-    alert(`Exporting ${type === 'all' ? 'All' : 'Filtered'} data for period: ${dateRange.start} to ${dateRange.end}`);
-  };
+    df_status = pd.DataFrame(status_mock, columns=status_cols)
+    df_activity = pd.DataFrame(activity_mock, columns=activity_cols)
+    
+    # Convert dates to datetime objects for filtering
+    df_status["Created Date"] = pd.to_datetime(df_status["Created Date"], dayfirst=True)
+    df_activity["Transaction Date & Time"] = pd.to_datetime(df_activity["Transaction Date & Time"], dayfirst=True)
+    
+    return df_status, df_activity
 
-  return (
-    <div className="p-6 bg-gray-50 min-h-screen font-sans">
-      <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-sm p-6">
-        <h1 className="text-2xl font-bold mb-6 text-gray-800">Goal Management Dashboard</h1>
+status_df, activity_df = load_data()
 
-        {/* Tab Selection */}
-        <div className="flex border-b mb-6">
-          <button 
-            onClick={() => setActiveTab('status')}
-            className={`px-6 py-2 font-medium ${activeTab === 'status' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}
-          >
-            Goals Status
-          </button>
-          <button 
-            onClick={() => setActiveTab('activity')}
-            className={`px-6 py-2 font-medium ${activeTab === 'activity' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}
-          >
-            Goals Activity
-          </button>
-        </div>
+# --- 3. SIDEBAR FILTERS ---
+st.sidebar.header("Filter Rules")
 
-        {/* Filter Bar */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          {/* Keyword Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-3 text-gray-400 size-4" />
-            <input 
-              type="text"
-              placeholder="Search ID, Name, Username..."
-              className="pl-10 w-full p-2 border rounded-md"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-          </div>
+# Keyword Search (Goal Name, Child ID, Parent ID, Child Nickname, Parent Username, Child Access)
+keyword = st.sidebar.text_input("Keyword Search", placeholder="Partial match, case-insensitive")
 
-          {/* Date Picker (DD-MM-YYYY format in UI) */}
-          <div className="flex items-center space-x-2 border rounded-md p-2">
-            <Calendar className="text-gray-400 size-4" />
-            <input 
-              type="date" 
-              className="outline-none text-sm"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-            />
-            <span>-</span>
-            <input 
-              type="date" 
-              className="outline-none text-sm"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-            />
-          </div>
+# Date Range Rule: Default to "Start from today backward 1 month"
+today = datetime.now().date()
+one_month_ago = today - timedelta(days=30)
+date_range = st.sidebar.date_input(
+    "Time Range Filter (DD-MM-YYYY)",
+    value=(one_month_ago, today),
+    format="DD-MM-YYYY"
+)
 
-          {/* Multi-select Progress Status (Status Tab Only) */}
-          {activeTab === 'status' && (
-            <div className="relative">
-              <select 
-                multiple
-                className="w-full p-2 border rounded-md text-sm h-10"
-                onChange={(e) => setStatusFilter(Array.from(e.target.selectedOptions, option => option.value))}
-              >
-                {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <p className="text-[10px] text-gray-400 mt-1">Hold Ctrl/Cmd to select multiple</p>
-            </div>
-          )}
+# Progress Status Rule: Multiple selection dropdown
+status_options = ["Completed", "Active", "Pending Approval", "Cancelled", "Rejected", "Expired"]
+selected_statuses = st.sidebar.multiselect("Progress Status", status_options, default=["Active", "Completed"])
 
-          {/* Export Buttons */}
-          <div className="flex space-x-2">
-            <button 
-              onClick={() => handleExport('filter')}
-              className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md flex items-center justify-center hover:bg-blue-700 transition"
-            >
-              <Download className="mr-2 size-4" /> Export by Filter
-            </button>
-          </div>
-        </div>
+# --- 4. MAIN INTERFACE ---
+st.title("Admin Reconciliation Dashboard")
 
-        {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">{error}</div>}
+tab1, tab2 = st.tabs(["Goal Status Report", "Goal Activity Report"])
 
-        {/* Mock Table */}
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-100 text-gray-600 uppercase text-xs">
-              <tr>
-                <th className="p-3">Child ID</th>
-                <th className="p-3">Nickname</th>
-                <th className="p-3">Goal Name</th>
-                {activeTab === 'status' ? (
-                   <>
-                    <th className="p-3">Current Allocated</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3">Created Date</th>
-                   </>
-                ) : (
-                  <>
-                    <th className="p-3">Amount</th>
-                    <th className="p-3">Date & Time</th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              <tr className="hover:bg-gray-50">
-                <td className="p-3 text-blue-600 font-medium">C-8821</td>
-                <td className="p-3">Alex</td>
-                <td className="p-3">New Bike</td>
-                {activeTab === 'status' ? (
-                  <>
-                    <td className="p-3">$150.00</td>
-                    <td className="p-3"><span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-[10px]">Active</span></td>
-                    <td className="p-3">12-01-2026</td>
-                  </>
-                ) : (
-                  <>
-                    <td className="p-3">$50.00</td>
-                    <td className="p-3 text-gray-500">20-01-2026 14:30</td>
-                  </>
-                )}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
+# Mandatory Export Logic Helper
+def validate_export():
+    if not isinstance(date_range, tuple) or len(date_range) < 2:
+        st.error("Error: Time Range filter is mandatory for exporting data.")
+        return False
+    return True
 
-export default PBI1_TestScreen;
+# Filtering Helper
+def apply_filters(df, date_col):
+    filtered = df.copy()
+    
+    # Apply Keyword (Case-insensitive partial match across all specified fields)
+    if keyword:
+        search_cols = ["Goal Name", "Child ID", "Parent ID", "Nickname", "Parent Username"]
+        # Only search columns that exist in the current dataframe
+        available_cols = [c for c in search_cols if c in filtered.columns]
+        mask = filtered[available_cols].apply(lambda row: row.astype(str).str.lower().str.contains(keyword.lower()).any(), axis=1)
+        filtered = filtered[mask]
+    
+    # Apply Multi-select Status
+    if "Progress Status" in filtered.columns and selected_statuses:
+        filtered = filtered[filtered["Progress Status"].isin(selected_statuses)]
+        
+    # Apply Date Range
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+        filtered = filtered[(filtered[date_col] >= start) & (filtered[date_col] <= end)]
+        
+    return filtered
+
+# --- TAB 1: GOAL STATUS ---
+with tab1:
+    st.subheader("Goals Status Management")
+    filtered_status = apply_filters(status_df, "Created Date")
+    st.dataframe(filtered_status, use_container_width=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Export by Filter (Status)"):
+            if validate_export():
+                st.download_button("Download CSV", filtered_status.to_csv(index=False), "goal_status_filtered.csv", "text/csv")
+    with col2:
+        if st.button("Export All (Status)"):
+            if validate_export():
+                # Requirement: Export all is still subject to the 1-month mandatory date constraint
+                st.download_button("Download CSV", status_df.to_csv(index=False), "goal_status_all.csv", "text/csv")
+
+# --- TAB 2: GOAL ACTIVITY ---
+with tab2:
+    st.subheader("Goals Activity Log")
+    # Rule: Sort by the latest transaction date and time by default
+    sorted_activity = activity_df.sort_values(by="Transaction Date & Time", ascending=False)
+    filtered_activity = apply_filters(sorted_activity, "Transaction Date & Time")
+    
+    st.dataframe(filtered_activity, use_container_width=True)
+    
+    col3, col4 = st.columns(2)
+    with col3:
+        if st.button("Export by Filter (Activity)"):
+            if validate_export():
+                st.download_button("Download CSV", filtered_activity.to_csv(index=False), "goal_activity_filtered.csv", "text/csv")
+    with col4:
+        if st.button("Export All (Activity)"):
+            if validate_export():
+                st.download_button("Download CSV", activity_df.to_csv(index=False), "goal_activity_all.csv", "text/csv")
