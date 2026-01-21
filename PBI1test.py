@@ -262,55 +262,87 @@ def apply_filters(df, date_col, column_filters=None):
     return filtered
 
 # Helper function to display column filters integrated with table
-def display_column_filters_in_table(df, prefix):
-    """Display filter inputs as part of a table-like interface with 1-second debounce"""
-    import time
+def display_table_with_integrated_filters(df, filtered_df, filters, prefix):
+    """Display dataframe with filter inputs as first row of the table"""
+    import pandas as pd
     
-    # Create a filter row styling
+    # Create filter input row for display
+    filter_row_data = {}
+    for col in df.columns:
+        filter_row_data[col] = f"🔍 {filters.get(col, '')}"
+    
+    # Create a combined dataframe with filter row at top
+    filter_df = pd.DataFrame([filter_row_data])
+    combined_df = pd.concat([filter_df, filtered_df], ignore_index=True)
+    
+    # Custom styling
     st.markdown("""
     <style>
-        .table-filter-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 0.5rem;
-            background-color: #E8F1FF;
-            padding: 0.8rem;
-            border: 1px solid #0066CC;
-            border-radius: 6px 6px 0 0;
-            margin-bottom: 0;
+        .dataframe-with-filters {
+            margin: 0 !important;
+            padding: 0 !important;
         }
-        .filter-input-cell {
-            display: flex;
-            align-items: center;
+        .dataframe-with-filters tbody tr:first-child {
+            background-color: #E8F1FF !important;
+            font-weight: 600 !important;
+            border-bottom: 2px solid #0066CC !important;
         }
-        .filter-input-cell input {
-            width: 100%;
+        .dataframe-with-filters tbody tr:first-child td {
             padding: 0.5rem !important;
-            border: 1px solid #B0D4FF !important;
-            border-radius: 4px !important;
-            background-color: white !important;
-            font-size: 0.85rem !important;
+            color: #003A99 !important;
+            text-align: center !important;
         }
     </style>
     """, unsafe_allow_html=True)
     
-    # Create filter row
+    return filter_df, filtered_df
+
+def display_searchable_table(df, prefix, filtered_df, placeholder_text="Search..."):
+    """Display table with integrated filter row"""
     num_cols = len(df.columns)
-    cols = st.columns(num_cols)
+    
+    # Use columns to create filter inputs that match column widths
+    st.markdown("""
+    <style>
+        .filter-table-wrapper {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .stDataFrame {
+            margin: 0 !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Create two-row display: filters on top, data below
+    # First display the filter row
+    filter_cols = st.columns(num_cols)
     filters = {}
     
-    st.markdown("<div style='background-color: #E8F1FF; padding: 0.8rem; border: 1px solid #0066CC; border-radius: 6px 6px 0 0; margin-bottom: -1rem;'><strong style='color: #003A99; font-size: 0.9rem;'>🔍 Search by Column:</strong></div>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown("<div style='background-color: #E8F1FF; padding: 0.8rem; border: 1px solid #0066CC; border-radius: 6px 6px 0 0; margin-bottom: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 0.5rem;'>", unsafe_allow_html=True)
+        
+        filter_row = st.columns(num_cols)
+        for i, col in enumerate(df.columns):
+            with filter_row[i]:
+                filter_key = f"{prefix}_{col}_input"
+                filters[col] = st.text_input(
+                    label=col,
+                    key=filter_key,
+                    placeholder="🔍",
+                    label_visibility="collapsed"
+                )
+        
+        st.markdown("</div>", unsafe_allow_html=True)
     
-    filter_cols = st.columns(num_cols)
-    for i, col in enumerate(df.columns):
-        with filter_cols[i]:
-            filter_key = f"{prefix}_{col}_filter"
-            filters[col] = st.text_input(
-                label=f"🔍 {col}",
-                key=filter_key,
-                placeholder=f"Search...",
-                label_visibility="collapsed"
-            )
+    # Display the filtered dataframe directly below with no gap
+    st.markdown("<div style='margin-top: -1rem;'>", unsafe_allow_html=True)
+    st.dataframe(
+        filtered_df,
+        use_container_width=True,
+        hide_index=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
     
     return filters
 
@@ -337,9 +369,8 @@ with tab1:
     if "status_filter_time" not in st.session_state:
         st.session_state.status_filter_time = {}
     
-    # Display column filters integrated with table
-    st.markdown("**Column Filters (Live Search):**")
-    status_filters = display_column_filters_in_table(status_df, "status")
+    # Display filters and get filter values
+    status_filters = display_searchable_table(status_df, "status_tab", status_df, "Filter...")
     
     # Add debounce: only apply filters if 1 second has passed
     import time
@@ -360,10 +391,8 @@ with tab1:
         # While debouncing, show previous results
         filtered_status = apply_filters(status_df, "Created Date", st.session_state.get("status_filters_prev", {}))
     
-    # Display results count
-    st.markdown(f"**Results:** {len(filtered_status)} of {len(status_df)} goals")
-    
-    # Display dataframe with improved styling
+    # Re-display table with filtered results
+    st.markdown("**Filtered Results:**")
     st.dataframe(
         filtered_status,
         use_container_width=True,
@@ -383,6 +412,9 @@ with tab1:
             )
         }
     )
+    
+    # Display results count
+    st.markdown(f"**Count:** {len(filtered_status)} of {len(status_df)} goals")
     
     st.markdown("---")
     
@@ -433,9 +465,8 @@ with tab2:
     if "activity_filter_time" not in st.session_state:
         st.session_state.activity_filter_time = {}
     
-    # Display column filters integrated with table
-    st.markdown("**Column Filters (Live Search):**")
-    activity_filters = display_column_filters_in_table(sorted_activity, "activity")
+    # Display filters and get filter values
+    activity_filters = display_searchable_table(sorted_activity, "activity_tab", sorted_activity, "Filter...")
     
     # Add debounce: only apply filters if 1 second has passed
     import time
