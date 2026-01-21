@@ -262,43 +262,57 @@ def apply_filters(df, date_col, column_filters=None):
     return filtered
 
 # Helper function to display column filters integrated with table
-def display_column_filters(df, prefix):
-    """Display filter inputs as a row header below column names"""
-    # Create a filter row using columns matching the dataframe columns
-    num_cols = len(df.columns)
-    cols = st.columns(num_cols)
-    filters = {}
+def display_column_filters_in_table(df, prefix):
+    """Display filter inputs as part of a table-like interface with 1-second debounce"""
+    import time
     
-    for i, col in enumerate(df.columns):
-        with cols[i]:
-            filter_key = f"{prefix}_{col}"
-            filters[col] = st.text_input(
-                label="",
-                key=filter_key,
-                placeholder=f"🔍 {col}",
-                label_visibility="collapsed"
-            )
-    
-    return filters
-
-# Helper function to display dataframe with filter row
-def display_filtered_table(df, filters, prefix):
-    """Display dataframe with filter row integrated as header"""
+    # Create a filter row styling
     st.markdown("""
     <style>
-        .filter-header {
+        .table-filter-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.5rem;
             background-color: #E8F1FF;
-            padding: 0.5rem;
-            border-bottom: 2px solid #0066CC;
-            font-weight: 600;
-            font-size: 0.85rem;
-            color: #003A99;
+            padding: 0.8rem;
+            border: 1px solid #0066CC;
+            border-radius: 6px 6px 0 0;
+            margin-bottom: 0;
+        }
+        .filter-input-cell {
+            display: flex;
+            align-items: center;
+        }
+        .filter-input-cell input {
+            width: 100%;
+            padding: 0.5rem !important;
+            border: 1px solid #B0D4FF !important;
+            border-radius: 4px !important;
+            background-color: white !important;
+            font-size: 0.85rem !important;
         }
     </style>
     """, unsafe_allow_html=True)
     
-    st.markdown('<div class="filter-header" style="text-align: center;">Filter Row → ↓</div>', unsafe_allow_html=True)
-    display_column_filters(df, prefix)
+    # Create filter row
+    num_cols = len(df.columns)
+    cols = st.columns(num_cols)
+    filters = {}
+    
+    st.markdown("<div style='background-color: #E8F1FF; padding: 0.8rem; border: 1px solid #0066CC; border-radius: 6px 6px 0 0; margin-bottom: -1rem;'><strong style='color: #003A99; font-size: 0.9rem;'>🔍 Search by Column:</strong></div>", unsafe_allow_html=True)
+    
+    filter_cols = st.columns(num_cols)
+    for i, col in enumerate(df.columns):
+        with filter_cols[i]:
+            filter_key = f"{prefix}_{col}_filter"
+            filters[col] = st.text_input(
+                label=f"🔍 {col}",
+                key=filter_key,
+                placeholder=f"Search...",
+                label_visibility="collapsed"
+            )
+    
+    return filters
 
 # --- TAB 1: GOAL STATUS ---
 with tab1:
@@ -317,17 +331,39 @@ with tab1:
     
     st.markdown("---")
     
-    # Display column filters integrated with table
-    st.markdown("**Column Filters Below Each Header:**")
-    status_filters = display_column_filters(status_df, "status")
+    # Initialize session state for filter tracking
+    if "status_filters_prev" not in st.session_state:
+        st.session_state.status_filters_prev = {}
+    if "status_filter_time" not in st.session_state:
+        st.session_state.status_filter_time = {}
     
-    # Apply all filters including column filters
-    filtered_status = apply_filters(status_df, "Created Date", status_filters)
+    # Display column filters integrated with table
+    st.markdown("**Column Filters (Live Search):**")
+    status_filters = display_column_filters_in_table(status_df, "status")
+    
+    # Add debounce: only apply filters if 1 second has passed
+    import time
+    current_time = time.time()
+    filters_changed = status_filters != st.session_state.get("status_filters_prev", {})
+    
+    # Apply filters with debounce logic
+    if filters_changed:
+        st.session_state.status_filter_time = current_time
+        st.session_state.status_filters_prev = status_filters.copy()
+    
+    # Check if 1 second has passed since last change
+    time_elapsed = current_time - st.session_state.get("status_filter_time", current_time)
+    if time_elapsed >= 1 or not filters_changed:
+        # Apply all filters including column filters
+        filtered_status = apply_filters(status_df, "Created Date", status_filters)
+    else:
+        # While debouncing, show previous results
+        filtered_status = apply_filters(status_df, "Created Date", st.session_state.get("status_filters_prev", {}))
     
     # Display results count
     st.markdown(f"**Results:** {len(filtered_status)} of {len(status_df)} goals")
     
-    # Display dataframe
+    # Display dataframe with improved styling
     st.dataframe(
         filtered_status,
         use_container_width=True,
@@ -336,6 +372,14 @@ with tab1:
             "Progress Status": st.column_config.TextColumn(
                 "Status",
                 help="Current progress status of the goal"
+            ),
+            "Current Amount Allocated": st.column_config.NumberColumn(
+                "Current Allocated",
+                format="$%.2f"
+            ),
+            "Target Amount": st.column_config.NumberColumn(
+                "Target Amount",
+                format="$%.2f"
             )
         }
     )
@@ -383,12 +427,34 @@ with tab2:
     # Sort by latest transaction
     sorted_activity = activity_df.sort_values(by="Transaction Date & Time", ascending=False)
     
-    # Display column filters integrated with table
-    st.markdown("**Column Filters Below Each Header:**")
-    activity_filters = display_column_filters(sorted_activity, "activity")
+    # Initialize session state for filter tracking
+    if "activity_filters_prev" not in st.session_state:
+        st.session_state.activity_filters_prev = {}
+    if "activity_filter_time" not in st.session_state:
+        st.session_state.activity_filter_time = {}
     
-    # Apply all filters including column filters
-    filtered_activity = apply_filters(sorted_activity, "Transaction Date & Time", activity_filters)
+    # Display column filters integrated with table
+    st.markdown("**Column Filters (Live Search):**")
+    activity_filters = display_column_filters_in_table(sorted_activity, "activity")
+    
+    # Add debounce: only apply filters if 1 second has passed
+    import time
+    current_time = time.time()
+    filters_changed = activity_filters != st.session_state.get("activity_filters_prev", {})
+    
+    # Apply filters with debounce logic
+    if filters_changed:
+        st.session_state.activity_filter_time = current_time
+        st.session_state.activity_filters_prev = activity_filters.copy()
+    
+    # Check if 1 second has passed since last change
+    time_elapsed = current_time - st.session_state.get("activity_filter_time", current_time)
+    if time_elapsed >= 1 or not filters_changed:
+        # Apply all filters including column filters
+        filtered_activity = apply_filters(sorted_activity, "Transaction Date & Time", activity_filters)
+    else:
+        # While debouncing, show previous results
+        filtered_activity = apply_filters(sorted_activity, "Transaction Date & Time", st.session_state.get("activity_filters_prev", {}))
     
     # Display results count
     st.markdown(f"**Results:** {len(filtered_activity)} of {len(activity_df)} transactions")
