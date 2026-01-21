@@ -203,102 +203,10 @@ tab1, tab2 = st.tabs(["📋 Goal Status Report", "📈 Goal Activity Report"])
 def validate_export():
     return True
 
-# Filtering Helper
+# Filtering Helper - No longer needed, using native Streamlit filtering
+# Keeping for backwards compatibility but simplified
 def apply_filters(df, date_col=None, column_filters=None):
-    filtered = df.copy()
-    
-    # Apply Column-level filters only
-    if column_filters:
-        for col, filter_value in column_filters.items():
-            if col in filtered.columns and filter_value:
-                filtered = filtered[filtered[col].astype(str).str.lower().str.contains(filter_value.lower(), na=False)]
-        
-    return filtered
-
-# Helper function to display column filters integrated with table
-def display_table_with_integrated_filters(df, filtered_df, filters, prefix):
-    """Display dataframe with filter inputs as first row of the table"""
-    import pandas as pd
-    
-    # Create filter input row for display
-    filter_row_data = {}
-    for col in df.columns:
-        filter_row_data[col] = f"🔍 {filters.get(col, '')}"
-    
-    # Create a combined dataframe with filter row at top
-    filter_df = pd.DataFrame([filter_row_data])
-    combined_df = pd.concat([filter_df, filtered_df], ignore_index=True)
-    
-    # Custom styling
-    st.markdown("""
-    <style>
-        .dataframe-with-filters {
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        .dataframe-with-filters tbody tr:first-child {
-            background-color: #E8F1FF !important;
-            font-weight: 600 !important;
-            border-bottom: 2px solid #0066CC !important;
-        }
-        .dataframe-with-filters tbody tr:first-child td {
-            padding: 0.5rem !important;
-            color: #003A99 !important;
-            text-align: center !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    return filter_df, filtered_df
-
-def display_searchable_table(df, prefix, filtered_df, placeholder_text="Search..."):
-    """Display table with integrated filter row"""
-    num_cols = len(df.columns)
-    
-    # Use columns to create filter inputs that match column widths
-    st.markdown("""
-    <style>
-        .filter-table-wrapper {
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        .stDataFrame {
-            margin: 0 !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Create two-row display: filters on top, data below
-    # First display the filter row
-    filter_cols = st.columns(num_cols)
-    filters = {}
-    
-    with st.container():
-        st.markdown("<div style='background-color: #E8F1FF; padding: 0.8rem; border: 1px solid #0066CC; border-radius: 6px 6px 0 0; margin-bottom: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 0.5rem;'>", unsafe_allow_html=True)
-        
-        filter_row = st.columns(num_cols)
-        for i, col in enumerate(df.columns):
-            with filter_row[i]:
-                filter_key = f"{prefix}_{col}_input"
-                filters[col] = st.text_input(
-                    label=col,
-                    key=filter_key,
-                    placeholder="🔍",
-                    label_visibility="collapsed"
-                )
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Display the filtered dataframe directly below with no gap
-    st.markdown("<div style='margin-top: -1rem;'>", unsafe_allow_html=True)
-    st.dataframe(
-        filtered_df,
-        use_container_width=True,
-        hide_index=True
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    return filters
+    return df
 
 # --- TAB 1: GOAL STATUS ---
 with tab1:
@@ -317,38 +225,10 @@ with tab1:
     
     st.markdown("---")
     
-    # Initialize session state for filter tracking
-    if "status_filters_prev" not in st.session_state:
-        st.session_state.status_filters_prev = {}
-    if "status_filter_time" not in st.session_state:
-        st.session_state.status_filter_time = {}
-    
-    # Display filters and get filter values
-    status_filters = display_searchable_table(status_df, "status_tab", status_df, "Filter...")
-    
-    # Add debounce: only apply filters if 1 second has passed
-    import time
-    current_time = time.time()
-    filters_changed = status_filters != st.session_state.get("status_filters_prev", {})
-    
-    # Apply filters with debounce logic
-    if filters_changed:
-        st.session_state.status_filter_time = current_time
-        st.session_state.status_filters_prev = status_filters.copy()
-    
-    # Check if 1 second has passed since last change
-    time_elapsed = current_time - st.session_state.get("status_filter_time", current_time)
-    if time_elapsed >= 1 or not filters_changed:
-        # Apply all filters including column filters
-        filtered_status = apply_filters(status_df, column_filters=status_filters)
-    else:
-        # While debouncing, show previous results
-        filtered_status = apply_filters(status_df, column_filters=st.session_state.get("status_filters_prev", {}))
-    
-    # Re-display table with filtered results
-    st.markdown("**Filtered Results:**")
+    # Display dataframe with native filtering on columns
+    st.markdown("**Goals Status Data:**")
     st.dataframe(
-        filtered_status,
+        status_df,
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -367,34 +247,23 @@ with tab1:
         }
     )
     
-    # Display results count
-    st.markdown(f"**Count:** {len(filtered_status)} of {len(status_df)} goals")
-    
     st.markdown("---")
     
     # Export section
     st.markdown("**Export Options**")
     col_export_1, col_export_2 = st.columns(2)
     with col_export_1:
-        if st.button("📥 Export Filtered Results", use_container_width=True):
-            if validate_export():
-                st.download_button(
-                    label="Download Filtered CSV",
-                    data=filtered_status.to_csv(index=False),
-                    file_name=f"goal_status_filtered_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+        if st.button("📥 Export All Data", use_container_width=True, key="export_status"):
+            st.download_button(
+                label="Download CSV",
+                data=status_df.to_csv(index=False),
+                file_name=f"goal_status_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
     with col_export_2:
-        if st.button("📊 Export All Results", use_container_width=True):
-            if validate_export():
-                st.download_button(
-                    label="Download All CSV",
-                    data=status_df.to_csv(index=False),
-                    file_name=f"goal_status_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+        if st.button("📊 View Statistics", use_container_width=True, key="stats_status"):
+            st.info(f"Total Goals: {len(status_df)} | Active: {len(status_df[status_df['Progress Status'] == 'Active'])} | Completed: {len(status_df[status_df['Progress Status'] == 'Completed'])}")
 
 # --- TAB 2: GOAL ACTIVITY ---
 with tab2:
@@ -413,40 +282,10 @@ with tab2:
     # Sort by latest transaction
     sorted_activity = activity_df.sort_values(by="Transaction Date & Time", ascending=False)
     
-    # Initialize session state for filter tracking
-    if "activity_filters_prev" not in st.session_state:
-        st.session_state.activity_filters_prev = {}
-    if "activity_filter_time" not in st.session_state:
-        st.session_state.activity_filter_time = {}
-    
-    # Display filters and get filter values
-    activity_filters = display_searchable_table(sorted_activity, "activity_tab", sorted_activity, "Filter...")
-    
-    # Add debounce: only apply filters if 1 second has passed
-    import time
-    current_time = time.time()
-    filters_changed = activity_filters != st.session_state.get("activity_filters_prev", {})
-    
-    # Apply filters with debounce logic
-    if filters_changed:
-        st.session_state.activity_filter_time = current_time
-        st.session_state.activity_filters_prev = activity_filters.copy()
-    
-    # Check if 1 second has passed since last change
-    time_elapsed = current_time - st.session_state.get("activity_filter_time", current_time)
-    if time_elapsed >= 1 or not filters_changed:
-        # Apply all filters including column filters
-        filtered_activity = apply_filters(sorted_activity, column_filters=activity_filters)
-    else:
-        # While debouncing, show previous results
-        filtered_activity = apply_filters(sorted_activity, column_filters=st.session_state.get("activity_filters_prev", {}))
-    
-    # Display results count
-    st.markdown(f"**Results:** {len(filtered_activity)} of {len(activity_df)} transactions")
-    
-    # Display dataframe
+    # Display dataframe with native filtering on columns
+    st.markdown("**Activity Log Data:**")
     st.dataframe(
-        filtered_activity,
+        sorted_activity,
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -465,24 +304,16 @@ with tab2:
     
     # Export section
     st.markdown("**Export Options**")
-    col_export_3, col_export_4 = st.columns(2)
-    with col_export_3:
-        if st.button("📥 Export Filtered Results", key="activity_filtered", use_container_width=True):
-            if validate_export():
-                st.download_button(
-                    label="Download Filtered CSV",
-                    data=filtered_activity.to_csv(index=False),
-                    file_name=f"goal_activity_filtered_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-    with col_export_4:
-        if st.button("📊 Export All Results", key="activity_all", use_container_width=True):
-            if validate_export():
-                st.download_button(
-                    label="Download All CSV",
-                    data=activity_df.to_csv(index=False),
-                    file_name=f"goal_activity_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
+    col_export_1, col_export_2 = st.columns(2)
+    with col_export_1:
+        if st.button("📥 Export All Data", use_container_width=True, key="export_activity"):
+            st.download_button(
+                label="Download CSV",
+                data=sorted_activity.to_csv(index=False),
+                file_name=f"goal_activity_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    with col_export_2:
+        if st.button("📊 View Statistics", use_container_width=True, key="stats_activity"):
+            st.info(f"Total Transactions: {len(activity_df)} | Total Allocated: ${activity_df['Amount Allocated'].sum():,.2f}")
