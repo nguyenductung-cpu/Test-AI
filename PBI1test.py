@@ -186,38 +186,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 3. SIDEBAR FILTERS ---
-st.sidebar.markdown("### 🔍 Filter Controls")
-st.sidebar.markdown("---")
-
-# Keyword Search
-st.sidebar.markdown("**Global Search**")
-keyword = st.sidebar.text_input(
-    "Keyword Search",
-    placeholder="Search by ID, Name, Username...",
-    help="Case-insensitive partial match across all fields"
-)
-
-# Date Range Rule
-st.sidebar.markdown("**Date Range**")
+# Initialize filter variables (no longer in sidebar)
+keyword = ""
 today = datetime.now().date()
 one_month_ago = today - timedelta(days=30)
-date_range = st.sidebar.date_input(
-    "Time Range Filter",
-    value=(one_month_ago, today),
-    format="DD-MM-YYYY",
-    help="Default: Last 30 days"
-)
-
-# Progress Status Rule
-st.sidebar.markdown("**Status Filter**")
-status_options = ["Completed", "Active", "Pending Approval", "Cancelled", "Rejected", "Expired"]
-selected_statuses = st.sidebar.multiselect(
-    "Progress Status",
-    status_options,
-    default=["Active", "Completed"],
-    help="Select one or more statuses"
-)
+date_range = (one_month_ago, today)
+selected_statuses = []
 
 # --- 4. MAIN INTERFACE ---
 st.markdown("---")
@@ -227,33 +201,13 @@ tab1, tab2 = st.tabs(["📋 Goal Status Report", "📈 Goal Activity Report"])
 
 # Mandatory Export Logic Helper
 def validate_export():
-    if not isinstance(date_range, tuple) or len(date_range) < 2:
-        st.error("Error: Time Range filter is mandatory for exporting data.")
-        return False
     return True
 
 # Filtering Helper
-def apply_filters(df, date_col, column_filters=None):
+def apply_filters(df, date_col=None, column_filters=None):
     filtered = df.copy()
     
-    # Apply Keyword (Case-insensitive partial match across all specified fields)
-    if keyword:
-        search_cols = ["Goal Name", "Child ID", "Parent ID", "Nickname", "Parent Username"]
-        # Only search columns that exist in the current dataframe
-        available_cols = [c for c in search_cols if c in filtered.columns]
-        mask = filtered[available_cols].apply(lambda row: row.astype(str).str.lower().str.contains(keyword.lower()).any(), axis=1)
-        filtered = filtered[mask]
-    
-    # Apply Multi-select Status
-    if "Progress Status" in filtered.columns and selected_statuses:
-        filtered = filtered[filtered["Progress Status"].isin(selected_statuses)]
-        
-    # Apply Date Range
-    if isinstance(date_range, tuple) and len(date_range) == 2:
-        start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-        filtered = filtered[(filtered[date_col] >= start) & (filtered[date_col] <= end)]
-    
-    # Apply Column-level filters
+    # Apply Column-level filters only
     if column_filters:
         for col, filter_value in column_filters.items():
             if col in filtered.columns and filter_value:
@@ -386,10 +340,10 @@ with tab1:
     time_elapsed = current_time - st.session_state.get("status_filter_time", current_time)
     if time_elapsed >= 1 or not filters_changed:
         # Apply all filters including column filters
-        filtered_status = apply_filters(status_df, "Created Date", status_filters)
+        filtered_status = apply_filters(status_df, column_filters=status_filters)
     else:
         # While debouncing, show previous results
-        filtered_status = apply_filters(status_df, "Created Date", st.session_state.get("status_filters_prev", {}))
+        filtered_status = apply_filters(status_df, column_filters=st.session_state.get("status_filters_prev", {}))
     
     # Re-display table with filtered results
     st.markdown("**Filtered Results:**")
@@ -482,10 +436,10 @@ with tab2:
     time_elapsed = current_time - st.session_state.get("activity_filter_time", current_time)
     if time_elapsed >= 1 or not filters_changed:
         # Apply all filters including column filters
-        filtered_activity = apply_filters(sorted_activity, "Transaction Date & Time", activity_filters)
+        filtered_activity = apply_filters(sorted_activity, column_filters=activity_filters)
     else:
         # While debouncing, show previous results
-        filtered_activity = apply_filters(sorted_activity, "Transaction Date & Time", st.session_state.get("activity_filters_prev", {}))
+        filtered_activity = apply_filters(sorted_activity, column_filters=st.session_state.get("activity_filters_prev", {}))
     
     # Display results count
     st.markdown(f"**Results:** {len(filtered_activity)} of {len(activity_df)} transactions")
