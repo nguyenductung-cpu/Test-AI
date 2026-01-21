@@ -261,25 +261,44 @@ def apply_filters(df, date_col, column_filters=None):
         
     return filtered
 
-# Helper function to display column filters
+# Helper function to display column filters integrated with table
 def display_column_filters(df, prefix):
-    """Display filter inputs below column headers in a professional layout"""
-    st.markdown("**Column Filters**")
-    cols = st.columns(min(len(df.columns), 4))  # Max 4 columns per row
+    """Display filter inputs as a row header below column names"""
+    # Create a filter row using columns matching the dataframe columns
+    num_cols = len(df.columns)
+    cols = st.columns(num_cols)
     filters = {}
     
     for i, col in enumerate(df.columns):
-        col_index = i % 4
-        with cols[col_index]:
+        with cols[i]:
             filter_key = f"{prefix}_{col}"
             filters[col] = st.text_input(
-                col,
+                label="",
                 key=filter_key,
-                placeholder=f"Filter...",
+                placeholder=f"🔍 {col}",
                 label_visibility="collapsed"
             )
     
     return filters
+
+# Helper function to display dataframe with filter row
+def display_filtered_table(df, filters, prefix):
+    """Display dataframe with filter row integrated as header"""
+    st.markdown("""
+    <style>
+        .filter-header {
+            background-color: #E8F1FF;
+            padding: 0.5rem;
+            border-bottom: 2px solid #0066CC;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: #003A99;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="filter-header" style="text-align: center;">Filter Row → ↓</div>', unsafe_allow_html=True)
+    display_column_filters(df, prefix)
 
 # --- TAB 1: GOAL STATUS ---
 with tab1:
@@ -298,10 +317,9 @@ with tab1:
     
     st.markdown("---")
     
-    # Filter section
-    st.markdown('<div class="filter-section">', unsafe_allow_html=True)
+    # Display column filters integrated with table
+    st.markdown("**Column Filters Below Each Header:**")
     status_filters = display_column_filters(status_df, "status")
-    st.markdown('</div>', unsafe_allow_html=True)
     
     # Apply all filters including column filters
     filtered_status = apply_filters(status_df, "Created Date", status_filters)
@@ -365,10 +383,9 @@ with tab2:
     # Sort by latest transaction
     sorted_activity = activity_df.sort_values(by="Transaction Date & Time", ascending=False)
     
-    # Filter section
-    st.markdown('<div class="filter-section">', unsafe_allow_html=True)
+    # Display column filters integrated with table
+    st.markdown("**Column Filters Below Each Header:**")
     activity_filters = display_column_filters(sorted_activity, "activity")
-    st.markdown('</div>', unsafe_allow_html=True)
     
     # Apply all filters including column filters
     filtered_activity = apply_filters(sorted_activity, "Transaction Date & Time", activity_filters)
